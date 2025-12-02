@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Surveillance Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Campus Surveillance Dashboard</h1>
+        <p>Status: <span id="status-indicator">Loading...</span></p>
+    </header>
+
+    <main>
+        <section class="video-section">
+            <h2>Live Feed</h2>
+            <img id="video-feed" src="/video_feed" alt="Video feed">
+        </section>
+
+        <section class="alerts-section">
+            <h2>Recent Alerts</h2>
+            <ul id="alerts"></ul>
+        </section>
+    </main>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
+
