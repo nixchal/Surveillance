@@ -1,3 +1,4 @@
+
 """Main detection pipeline combining YOLO and heuristic detectors."""
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from .video_stream import VideoStream
 from .zone_manager import Zone, ZoneManager
 from .pose_analyzer import PoseAnalyzer, PoseAnalysisResult
 from .sam_segmenter import SamPersonSegmenter
+from .detectors.fire_detector import FireDetector
+from .detectors.fight_detector import FightDetector
 
 
 LOGGER = logging.getLogger(__name__)
@@ -79,10 +82,13 @@ class CampusSurveillance:
             self.pose_analyzer = None
         self.smoking_frames = 0
         self.active_smoking_instances = 0
-        self.fight_frames = 0
         self._prev_gray: Optional[np.ndarray] = None
         self._fight_metrics: Dict[str, float] = {}
         self._pose_history: List[Dict[str, np.ndarray]] = []
+
+        # Modular Detectors
+        self.fire_detector = FireDetector()
+        self.fight_detector = FightDetector()
 
         LOGGER.info("CampusSurveillance initialized (show_windows=%s)", show_windows)
 
@@ -125,9 +131,9 @@ class CampusSurveillance:
                 if self._fight_metrics:
                     cv2.putText(
                         frame,
-                        "overlap={mask_overlap:.3f} dist={min_distance:.1f} iou={max_iou:.3f}".format(
+                        "overlap={mask_overlap:.3f} dist={min_distance} iou={max_iou:.3f}".format(
                             mask_overlap=self._fight_metrics.get("mask_overlap", 0.0),
-                            min_distance=self._fight_metrics.get("min_distance", 0.0) or 0.0,
+                            min_distance=self._fight_metrics.get("min_distance") or 0.0,
                             max_iou=self._fight_metrics.get("max_iou", 0.0),
                         ),
                         (10, 52),
@@ -256,11 +262,7 @@ class CampusSurveillance:
             )
 
     def _handle_fire_detection(self, frame: np.ndarray) -> None:
-        if not config.ENABLE_FIRE_DETECTION:
-            return
-
-        fire_mask = self._fire_color_mask(frame)
-        fire_ratio = float(np.count_nonzero(fire_mask)) / fire_mask.size
+        fire_ratio = self.fire_detector.detect(frame)
         if fire_ratio >= config.FIRE_COLOR_THRESHOLD:
             self._raise_alert(
                 event_type="Fire suspected",
@@ -318,98 +320,18 @@ class CampusSurveillance:
             self.active_smoking_instances = 0
 
     def _handle_fight_detection(self, frame: np.ndarray, detections: List[Detection], motion_ratio: float) -> None:
-        if not config.ENABLE_FIGHT_DETECTION:
-            return
-
-        persons = [det for det in detections if det.label == "person"]
-        if len(persons) < 2:
-            self.fight_frames = max(0, self.fight_frames - 1)
-            self._fight_metrics = {}
-            return
-
-        fight_likely = False
-        close_pair = False
-        mask_pair = False
-        min_distance = float("inf")
-        max_iou = 0.0
-        best_mask_overlap = 0.0
-        for i in range(len(persons)):
-            for j in range(i + 1, len(persons)):
-                det_a = persons[i]
-                det_b = persons[j]
-                iou = self._detection_iou(det_a, det_b)
-                if iou > max_iou:
-                    max_iou = iou
-                if iou >= config.FIGHT_IOU_THRESHOLD:
-                    fight_likely = True
-                    break
-                distance = self._detection_distance(det_a, det_b)
-                if distance < min_distance:
-                    min_distance = distance
-                mask_overlap = self._mask_contact_ratio(det_a, det_b)
-                if mask_overlap > best_mask_overlap:
-                    best_mask_overlap = mask_overlap
-                if mask_overlap >= config.FIGHT_MASK_MIN_OVERLAP_RATIO:
-                    mask_pair = True
-                    close_pair = True
-                    break
-                min_width = min(det_a.bbox[2] - det_a.bbox[0], det_b.bbox[2] - det_b.bbox[0])
-                distance_threshold = max(20.0, min_width * config.FIGHT_DISTANCE_THRESHOLD_RATIO)
-                if distance <= min(config.FIGHT_DISTANCE_MAX_PIXELS, distance_threshold):
-                    close_pair = True
-                    # Defer final decision to motion check below
-                    break
-            if fight_likely:
-                break
-
-        # Boost decision with motion: high motion + close pair suggests scuffle
-        if not fight_likely and (close_pair or mask_pair) and motion_ratio >= config.FIGHT_MOTION_RATIO_THRESHOLD:
-            fight_likely = True
-
-        # Additional heuristic: multiple people with very high motion in frame
-        if (
-            not fight_likely
-            and len(persons) >= config.FIGHT_MULTI_PERSON_COUNT
-            and motion_ratio >= config.FIGHT_HIGH_MOTION_THRESHOLD
-            and best_mask_overlap > 0.0
-        ):
-            fight_likely = True
-
-        if (
-            not fight_likely
-            and min_distance != float("inf")
-            and motion_ratio >= config.FIGHT_HIGH_MOTION_THRESHOLD
-            and min_distance <= config.FIGHT_DISTANCE_FORCE_THRESHOLD
-        ):
-            fight_likely = True
-
-        self._fight_metrics = {
-            "mask_overlap": best_mask_overlap,
-            "min_distance": None if min_distance == float("inf") else min_distance,
-            "max_iou": max_iou,
-        }
-
-        if fight_likely:
-            self.fight_frames += 1
-        else:
-            self.fight_frames = max(0, self.fight_frames - 1)
-
-        if self.fight_frames >= config.FIGHT_FRAMES_THRESHOLD:
+        result = self.fight_detector.detect(frame, detections, motion_ratio)
+        self._fight_metrics = result.get("metrics", {})
+        
+        if result.get("detected"):
             self._raise_alert(
                 event_type="Fight suspected",
                 priority=config.AlertPriority.HIGH,
                 confidence=None,
                 description="Person proximity and motion suggest fighting",
                 frame=frame,
-                extra={
-                    "person_count": len(persons),
-                    "motion_ratio": motion_ratio,
-                    "min_distance": min_distance if min_distance != float("inf") else None,
-                    "max_iou": max_iou,
-                    "mask_overlap": best_mask_overlap,
-                },
+                extra=self._fight_metrics,
             )
-            self.fight_frames = 0
 
     def _handle_smoke_color_detection(self, frame: np.ndarray) -> None:
         if not config.ENABLE_SMOKE_COLOR_DETECTION:
@@ -448,16 +370,6 @@ class CampusSurveillance:
         return frame[y1:y2, x1:x2], (x1, y1, x2, y2)
 
     # ------------------------------------------------------------------ Utilities
-    def _fire_color_mask(self, frame: np.ndarray) -> np.ndarray:
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        lower1 = np.array([0, 120, 150])
-        upper1 = np.array([10, 255, 255])
-        lower2 = np.array([160, 100, 150])
-        upper2 = np.array([179, 255, 255])
-        mask1 = cv2.inRange(hsv, lower1, upper1)
-        mask2 = cv2.inRange(hsv, lower2, upper2)
-        return cv2.bitwise_or(mask1, mask2)
-
     @staticmethod
     def _bbox_centroid(bbox: np.ndarray) -> tuple[int, int]:
         x1, y1, x2, y2 = bbox
@@ -512,76 +424,6 @@ class CampusSurveillance:
         )
         self.alert_manager.emit(alert)
 
-    @staticmethod
-    def _bbox_iou(a: np.ndarray, b: np.ndarray) -> float:
-        x1 = max(a[0], b[0])
-        y1 = max(a[1], b[1])
-        x2 = min(a[2], b[2])
-        y2 = min(a[3], b[3])
-        inter_width = max(0.0, x2 - x1)
-        inter_height = max(0.0, y2 - y1)
-        intersection = inter_width * inter_height
-        if intersection <= 0:
-            return 0.0
-        area_a = (a[2] - a[0]) * (a[3] - a[1])
-        area_b = (b[2] - b[0]) * (b[3] - b[1])
-        union = area_a + area_b - intersection
-        if union <= 0:
-            return 0.0
-        return intersection / union
-
-    @staticmethod
-    def _centroid_distance(a: np.ndarray, b: np.ndarray) -> float:
-        ax, ay = CampusSurveillance._bbox_centroid(a)
-        bx, by = CampusSurveillance._bbox_centroid(b)
-        return float(np.hypot(ax - bx, ay - by))
-
-    def _detection_iou(self, det_a: Detection, det_b: Detection) -> float:
-        if det_a.mask is not None and det_b.mask is not None:
-            try:
-                intersection = np.logical_and(det_a.mask, det_b.mask).sum()
-                if intersection == 0:
-                    return 0.0
-                union = np.logical_or(det_a.mask, det_b.mask).sum()
-                return float(intersection / union) if union > 0 else 0.0
-            except Exception:
-                pass
-        return self._bbox_iou(det_a.bbox, det_b.bbox)
-
-    def _detection_distance(self, det_a: Detection, det_b: Detection) -> float:
-        centroid_a = self._detection_centroid(det_a)
-        centroid_b = self._detection_centroid(det_b)
-        return float(np.hypot(centroid_a[0] - centroid_b[0], centroid_a[1] - centroid_b[1]))
-
-    @staticmethod
-    def _detection_centroid(detection: Detection) -> tuple[int, int]:
-        if detection.mask is not None:
-            try:
-                mask_uint = detection.mask.astype(np.uint8)
-                moments = cv2.moments(mask_uint)
-                if moments["m00"] != 0:
-                    cx = int(moments["m10"] / moments["m00"])
-                    cy = int(moments["m01"] / moments["m00"])
-                    return cx, cy
-            except Exception:
-                pass
-        return CampusSurveillance._bbox_centroid(detection.bbox)
-
-    def _mask_contact_ratio(self, det_a: Detection, det_b: Detection) -> float:
-        if det_a.mask is None or det_b.mask is None:
-            return 0.0
-        try:
-            kernel_size = max(1, config.FIGHT_MASK_DILATION_PIXELS)
-            kernel = np.ones((kernel_size, kernel_size), np.uint8)
-            dilated_a = cv2.dilate(det_a.mask.astype(np.uint8), kernel, iterations=1)
-            overlap = np.logical_and(dilated_a.astype(bool), det_b.mask).sum()
-            min_area = float(min(det_a.mask.sum(), det_b.mask.sum()))
-            if min_area <= 0:
-                return 0.0
-            return overlap / min_area
-        except Exception:
-            return 0.0
-
     # ------------------------------- Motion Estimation (frame differencing)
     def _estimate_motion_ratio(self, frame: np.ndarray) -> float:
         try:
@@ -607,6 +449,20 @@ class CampusSurveillance:
         self.zone_manager.add_zone(zone)
         return zone
 
+    def _ensure_pose(self, frame: np.ndarray, detection: Detection) -> Optional[PoseAnalysisResult]:
+        if self.pose_analyzer is None:
+            return None
+        if detection.pose is not None:
+            return detection.pose
+        
+        # Crop person
+        person_crop, _ = self._crop_person_frame(frame, detection.bbox)
+        if person_crop is None:
+            return None
+            
+        result = self.pose_analyzer.analyze(person_crop)
+        detection.pose = result
+        return result
+
 
 __all__ = ["CampusSurveillance", "Detection"]
-

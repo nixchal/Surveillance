@@ -9,26 +9,38 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import List, Optional
+import sys
+import os
 
 import cv2
 import numpy as np
 import torch
 
-try:  # heavy import – keep behind try/except
-    import sam3  # type: ignore
-    from sam3 import build_sam3_image_model  # type: ignore
-    from sam3.model.box_ops import box_xywh_to_cxcywh  # type: ignore
-    from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore
-    from sam3.visualization_utils import normalize_bbox  # type: ignore
-except Exception:  # pragma: no cover - handled gracefully at runtime
-    sam3 = None  # type: ignore
-    build_sam3_image_model = None  # type: ignore
-    box_xywh_to_cxcywh = None  # type: ignore
-    Sam3Processor = None  # type: ignore
-    normalize_bbox = None  # type: ignore
-
-
 LOGGER = logging.getLogger(__name__)
+
+# Debug: Print sys.path to help diagnose import issues
+LOGGER.info("Current sys.path: %s", sys.path)
+LOGGER.info("Current working directory: %s", os.getcwd())
+
+# Explicitly add sam3 path
+sam3_path = os.path.abspath(os.path.join(os.getcwd(), "sam3-main", "sam3-main"))
+if sam3_path not in sys.path:
+    sys.path.append(sam3_path)
+    LOGGER.info("Added %s to sys.path", sam3_path)
+
+try:
+    import sam3
+    from sam3 import build_sam3_image_model
+    from sam3.model.box_ops import box_xywh_to_cxcywh
+    from sam3.model.sam3_image_processor import Sam3Processor
+    from sam3.visualization_utils import normalize_bbox
+except ImportError as e:
+    LOGGER.warning("SAM3 package not found: %s. Segmentation will be disabled.", e)
+    sam3 = None
+    build_sam3_image_model = None
+    box_xywh_to_cxcywh = None
+    Sam3Processor = None
+    normalize_bbox = None
 
 
 class SamPersonSegmenter:
@@ -44,22 +56,29 @@ class SamPersonSegmenter:
         device: Optional[str] = None,
         confidence_threshold: float = 0.5,
     ) -> None:
-        if sam3 is None or build_sam3_image_model is None or Sam3Processor is None:
-            raise RuntimeError("sam3 package is not available – did you install it into the venv?")
+        if sam3 is None:
+            raise RuntimeError("sam3 package is not available.")
 
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
+        LOGGER.info("SAM3 Segmenter initialized on device: %s", self.device)
 
-        # Locate assets inside the installed sam3 package
-        sam3_root = Path(sam3.__file__).resolve().parent.parent
-        bpe_path = sam3_root / "assets" / "bpe_simple_vocab_16e6.txt.gz"
+        # Locate assets
+        base_dir = Path(__file__).resolve().parent.parent
+        bpe_path = base_dir / "assets" / "bpe_simple_vocab_16e6.txt.gz"
 
         if not bpe_path.exists():
-            raise FileNotFoundError(f"SAM3 BPE vocab not found at {bpe_path}")
+            # Fallback to the original download location
+            fallback_path = Path(r"c:\Users\amiku\Downloads\Surveillance\sam3-main\sam3-main\assets\bpe_simple_vocab_16e6.txt.gz")
+            if fallback_path.exists():
+                bpe_path = fallback_path
+                LOGGER.info("Using fallback asset path: %s", bpe_path)
+            else:
+                raise FileNotFoundError(f"SAM3 BPE vocab not found at {bpe_path} or {fallback_path}")
 
         LOGGER.info("Loading SAM3 image model from %s", bpe_path)
-        model = build_sam3_image_model(bpe_path=str(bpe_path))
+        model = build_sam3_image_model(bpe_path=str(bpe_path), device=self.device)
         model.to(self.device)
         model.eval()
 

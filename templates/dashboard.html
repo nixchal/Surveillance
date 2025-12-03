@@ -3,28 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Campus Surveillance Dashboard</title>
+    <title>Sentinel AI | Campus Surveillance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-    <header>
-        <h1>Campus Surveillance Dashboard</h1>
-        <p>Status: <span id="status-indicator">Loading...</span></p>
-    </header>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i data-lucide="shield-alert"></i>
+                <span>SENTINEL AI</span>
+            </div>
+            <nav>
+                <a href="#" class="active"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+                <a href="#"><i data-lucide="camera"></i> Cameras</a>
+                <a href="#"><i data-lucide="history"></i> History</a>
+                <a href="#"><i data-lucide="settings"></i> Settings</a>
+            </nav>
+            <div class="system-status">
+                <div class="status-indicator online"></div>
+                <span>System Online</span>
+            </div>
+        </aside>
 
-    <main>
-        <section class="video-section">
-            <h2>Live Feed</h2>
-            <img id="video-feed" src="/video_feed" alt="Video feed">
-        </section>
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <div class="breadcrumbs">
+                    <span>Dashboard</span> / <span>Live Monitor</span>
+                </div>
+                <div class="clock" id="clock">00:00:00</div>
+            </header>
 
-        <section class="alerts-section">
-            <h2>Recent Alerts</h2>
-            <ul id="alerts"></ul>
-        </section>
-    </main>
+            <div class="dashboard-grid">
+                <!-- Video Feed -->
+                <div class="video-card">
+                    <div class="card-header">
+                        <h3><i data-lucide="video"></i> Live Feed - Cam 01</h3>
+                        <span class="live-badge">LIVE</span>
+                    </div>
+                    <div class="video-wrapper">
+                        <img id="video-feed" src="/video_feed" alt="Live Surveillance Feed">
+                        <div class="video-overlay">
+                            <div class="overlay-info">
+                                <span>FPS: <span id="fps-counter">--</span></span>
+                                <span>Objects: <span id="obj-counter">0</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats & Alerts -->
+                <div class="side-panel">
+                    <!-- Stats Row -->
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <span class="stat-label">Alerts Today</span>
+                            <span class="stat-value" id="alert-count">0</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Active Cams</span>
+                            <span class="stat-value">1</span>
+                        </div>
+                    </div>
+
+                    <!-- Recent Alerts -->
+                    <div class="alerts-card">
+                        <div class="card-header">
+                            <h3><i data-lucide="bell"></i> Recent Alerts</h3>
+                        </div>
+                        <div class="alerts-list" id="alerts-list">
+                            <!-- Alerts will be injected here -->
+                            <div class="empty-state">No active alerts</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 
     <script src="/static/js/dashboard.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
 </body>
 </html>
-
