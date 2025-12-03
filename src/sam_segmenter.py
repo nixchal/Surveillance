@@ -29,11 +29,17 @@ if sam3_path not in sys.path:
     LOGGER.info("Added %s to sys.path", sam3_path)
 
 try:
+    print("DEBUG: Importing sam3...")
     import sam3
+    print("DEBUG: Imported sam3.")
     from sam3 import build_sam3_image_model
+    print("DEBUG: Imported build_sam3_image_model.")
     from sam3.model.box_ops import box_xywh_to_cxcywh
+    print("DEBUG: Imported box_ops.")
     from sam3.model.sam3_image_processor import Sam3Processor
+    print("DEBUG: Imported Sam3Processor.")
     from sam3.visualization_utils import normalize_bbox
+    print("DEBUG: Imported normalize_bbox.")
 except ImportError as e:
     LOGGER.warning("SAM3 package not found: %s. Segmentation will be disabled.", e)
     sam3 = None
@@ -77,16 +83,38 @@ class SamPersonSegmenter:
             else:
                 raise FileNotFoundError(f"SAM3 BPE vocab not found at {bpe_path} or {fallback_path}")
 
+        # Check for local checkpoint
+        checkpoint_path = base_dir / "models" / "sam3" / "sam3.pt"
+        load_from_HF = True
+        print(f"DEBUG: Checking for local checkpoint at {checkpoint_path}")
+        if checkpoint_path.exists():
+            LOGGER.info("Found local SAM3 checkpoint at %s", checkpoint_path)
+            print(f"DEBUG: Found local checkpoint at {checkpoint_path}")
+            load_from_HF = False
+        else:
+            LOGGER.info("Local SAM3 checkpoint not found at %s. Will attempt to download from Hugging Face.", checkpoint_path)
+            print(f"DEBUG: Local checkpoint NOT found at {checkpoint_path}. Will try Hugging Face download (requires auth).")
+            checkpoint_path = None
+
         LOGGER.info("Loading SAM3 image model from %s", bpe_path)
-        model = build_sam3_image_model(bpe_path=str(bpe_path), device=self.device)
+        print("DEBUG: Calling build_sam3_image_model...")
+        model = build_sam3_image_model(
+            bpe_path=str(bpe_path),
+            device=self.device,
+            checkpoint_path=str(checkpoint_path) if checkpoint_path else None,
+            load_from_HF=load_from_HF
+        )
+        print("DEBUG: build_sam3_image_model returned.")
         model.to(self.device)
         model.eval()
 
+        print("DEBUG: Initializing Sam3Processor...")
         self._processor = Sam3Processor(
             model,
             device=self.device,
             confidence_threshold=confidence_threshold,
         )
+        print("DEBUG: Sam3Processor initialized.")
 
     # ------------------------------------------------------------------ public API
     def segment_persons(
@@ -153,6 +181,8 @@ class SamPersonSegmenter:
                 masks_out.append(mask_bool)
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.warning("SAM3 segmentation failed for one bbox: %s", exc)
+                import traceback
+                traceback.print_exc()
                 masks_out.append(None)
 
         return masks_out

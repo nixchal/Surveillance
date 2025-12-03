@@ -37,36 +37,53 @@ A comprehensive, real-time surveillance solution designed for smart campuses. Th
 *   Python 3.8 or higher
 *   (Optional) NVIDIA GPU with CUDA toolkit installed for accelerated inference.
 
-### Steps
+### Quick Start
 
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/nixchal/Surveillance.git
-    cd Surveillance
-    ```
+The easiest way to get started is using the helper script:
 
-2.  **Install Dependencies**
+```bash
+# Install dependencies (if not already done)
+pip install -r requirements.txt
+
+# Start the system (uses webcam by default)
+python start_system.py
+```
+
+### 🎥 Testing with Video
+
+To test the system with a video file (e.g., for fight detection):
+
+```bash
+python start_system.py --video fight.mp4
+```
+
+### Manual Installation
+
+If you prefer to set up manually:
+
+1.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
-    *Note: For GPU support, ensure you install the CUDA-enabled version of PyTorch compatible with your system.*
 
-3.  **SAM 3.0 Setup**
-    *   The `sam3` package is integrated locally within this repository to ensure compatibility.
-    *   **Assets**: The system will attempt to locate or download necessary assets (e.g., tokenizer vocabulary) automatically.
-    *   **Checkpoints**: The SAM 3.0 model checkpoint (`sam3_hiera_l.pt`) will be downloaded automatically on first run if not found.
+2.  **Download Models:**
+    *   **SAM 3.0:** Run `python tools/download_sam3.py` or download `sam3.pt` manually to `models/sam3/`.
+    *   **YOLO:** Automatically downloaded on first run.
 
-## 🚀 Usage
-
-1.  **Start the System**
-    Run the main application script:
+3.  **Run Application:**
     ```bash
     python main.py
     ```
-    *   The system will initialize the camera feed, load YOLO and SAM models, and start the web server.
-    *   **Note**: The first run may take a few moments to download model weights.
 
-2.  **Access the Dashboard**
+## 🚀 Usage
+
+1.  **Start the System:**
+    ```bash
+    python start_system.py
+    ```
+    *   The system will initialize the camera feed, load YOLO and SAM models, and start the web server.
+
+2.  **Access the Dashboard:**
     Open your web browser and navigate to:
     ```
     http://localhost:5000

@@ -15,3 +15,6 @@ regex
 iopath
 pycocotools
 scikit-image
+tqdm
+matplotlib
+typing_extensions

@@ -12,8 +12,11 @@ import config
 from src.detector import CampusSurveillance
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(filename='startup_output.txt', level=logging.INFO, filemode='w')
 logger = logging.getLogger(__name__)
+print("Redirecting stdout/stderr to startup_output.txt")
+sys.stdout = open('startup_output.txt', 'a')
+sys.stderr = open('startup_output.txt', 'a')
 
 def verify_startup():
     logger.info("Starting verification...")

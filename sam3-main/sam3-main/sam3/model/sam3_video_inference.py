@@ -795,7 +795,7 @@ class Sam3VideoInference(Sam3VideoBase):
         return inference_state
 
     @torch.inference_mode()
-    @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    @torch.autocast(device_type="cuda" if torch.cuda.is_available() else "cpu", dtype=torch.bfloat16)
     def warm_up_compilation(self):
         """
         Warm up the model by running a dummy inference to compile the model. This is

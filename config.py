@@ -27,7 +27,9 @@ for target in [DATA_DIR, MODELS_DIR, STATIC_DIR, TEMPLATES_DIR, EVENTS_DIR, LOGS
 
 # --- Video & Detection -----------------------------------------------------------
 
-CAMERA_SOURCE: int | str = 0  # 0 for default webcam, or RTSP URL / file path
+CAMERA_SOURCE: int | str = os.getenv("CAMERA_SOURCE", 0)  # 0 for default webcam, or RTSP URL / file path
+if isinstance(CAMERA_SOURCE, str) and CAMERA_SOURCE.isdigit():
+    CAMERA_SOURCE = int(CAMERA_SOURCE)
 FRAME_WIDTH: int | None = None  # Set to reduce resolution, e.g., 640
 FRAME_HEIGHT: int | None = None  # Set to reduce resolution, e.g., 480
 FPS_TARGET: int = 15
